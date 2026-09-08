@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Pathless RK3566：仅在存在 sprd-mtty 设备树节点时启用
+if [[ ! -d /proc/device-tree/sprd-mtty ]]; then
+	systemctl disable pathless-rk3566-sprd-bluetooth.service
+	exit 0
+fi
+
+modprobe -a sprdbt_tty sprdwl_ng
+rfkill unblock all
+/usr/bin/hciattach_pathless -n -s 1500000 /dev/ttyBT0 sprd
+
+exit 0

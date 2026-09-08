@@ -1,0 +1,11 @@
+[Unit]
+Description=Spreadtrum (sprd) bluetooth support for Pathless RK3566
+Before=bluetooth.service
+
+[Service]
+Type=simple
+RemainAfterExit=Yes
+ExecStart=/usr/bin/pathless-rk3566-sprd-bluetooth
+
+[Install]
+WantedBy=multi-user.target
