@@ -61,7 +61,12 @@ resolve_sha() {
 
 create_or_update_branch() {
 	local name="$1" branch="$2" sha="$3"
-	if gh api "repos/${OWNER}/${name}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+	local cur
+	if cur="$(gh api "repos/${OWNER}/${name}/git/ref/heads/${branch}" --jq .object.sha 2>/dev/null)"; then
+		if [[ "${cur}" == "${sha}" ]]; then
+			echo "[skip] ${name} ${branch} 已是 ${sha}（无变更，避免假 push）"
+			return 0
+		fi
 		gh api -X PATCH "repos/${OWNER}/${name}/git/refs/heads/${branch}" -f sha="${sha}" -F force=true \
 			--jq '"[upd] "+.ref+" "+.object.sha'
 	else
@@ -191,7 +196,7 @@ makefile_version_at() {
 }
 
 update_linux_stable_version_meta() {
-	local c e b tip tag
+	local c e b tip tag title notes
 	c="$(makefile_version_at pathless-linux-stable current)"
 	e="$(makefile_version_at pathless-linux-stable edge)"
 	b="$(makefile_version_at pathless-linux-stable bleedingedge)"
@@ -199,11 +204,11 @@ update_linux_stable_version_meta() {
 	echo "[meta] ${desc}"
 	gh api -X PATCH "repos/${OWNER}/pathless-linux-stable" -f description="${desc}" --jq .description >/dev/null
 
-	for pair in "current:${c}" "edge:${e}" "bleedingedge:${b}"; do
-		local br="${pair%%:*}" ver="${pair##*:}"
-		[[ -z "${ver}" || "${ver}" == ".." ]] && continue
+	publish_stable_release() {
+		local br="$1" ver="$2"
+		[[ -z "${ver}" || "${ver}" == ".." ]] && return 0
 		tag="pathless-${br}-v${ver}"
-		tip="$(resolve_sha pathless-linux-stable "${br}")" || continue
+		tip="$(resolve_sha pathless-linux-stable "${br}")" || return 0
 		if ! gh api "repos/${OWNER}/pathless-linux-stable/git/ref/tags/${tag}" >/dev/null 2>&1; then
 			gh api -X POST "repos/${OWNER}/pathless-linux-stable/git/refs" \
 				-f ref="refs/tags/${tag}" -f sha="${tip}" --jq .ref >/dev/null
@@ -211,7 +216,29 @@ update_linux_stable_version_meta() {
 		else
 			echo "[tag] ${tag} already exists"
 		fi
-	done
+		# GitHub Release：页面右侧显示版本号（比 Activity「recent pushes」有意义）
+		if ! gh release view "${tag}" --repo "${OWNER}/pathless-linux-stable" >/dev/null 2>&1; then
+			title="Pathless ${br}: Linux ${ver}"
+			notes="产品分支 \`${br}\` 跟踪上游内核 **${ver}**（提交 \`${tip}\`）。"
+			gh release create "${tag}" \
+				--repo "${OWNER}/pathless-linux-stable" \
+				--target "${br}" \
+				--title "${title}" \
+				--notes "${notes}"
+			echo "[release] ${tag}"
+		else
+			echo "[release] ${tag} already exists"
+		fi
+	}
+
+	publish_stable_release current "${c}"
+	publish_stable_release edge "${e}"
+	publish_stable_release bleedingedge "${b}"
+
+	# 把「最新 Release」标到 current（GitHub 首页默认展示 Latest）
+	if gh release view "pathless-current-v${c}" --repo "${OWNER}/pathless-linux-stable" >/dev/null 2>&1; then
+		gh release edit "pathless-current-v${c}" --repo "${OWNER}/pathless-linux-stable" --latest >/dev/null 2>&1 || true
+	fi
 }
 
 warn_legacy_mirrors
