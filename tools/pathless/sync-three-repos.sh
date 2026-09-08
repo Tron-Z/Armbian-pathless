@@ -179,6 +179,39 @@ sync_kernel_mainline() {
 		sync_product_from_ref pathless-linux-stable "${b}" "${ref}"
 		drop_track_if_not_product pathless-linux-stable "${ref}"
 	done
+	update_linux_stable_version_meta
+}
+
+# 从 Makefile 读出版本号，写入仓描述 + pathless-<branch>-vX.Y.Z tag
+makefile_version_at() {
+	local name="$1" branch="$2"
+	gh api "repos/${OWNER}/${name}/contents/Makefile?ref=${branch}" --jq .content \
+		| base64 -d \
+		| awk '/^VERSION =/{v=$3} /^PATCHLEVEL =/{p=$3} /^SUBLEVEL =/{s=$3} /^EXTRAVERSION =/{e=$3} END{printf "%s.%s.%s%s", v,p,s,e}'
+}
+
+update_linux_stable_version_meta() {
+	local c e b tip tag
+	c="$(makefile_version_at pathless-linux-stable current)"
+	e="$(makefile_version_at pathless-linux-stable edge)"
+	b="$(makefile_version_at pathless-linux-stable bleedingedge)"
+	local desc="Pathless mainline kernel | current=${c} | edge=${e} | bleedingedge=${b}"
+	echo "[meta] ${desc}"
+	gh api -X PATCH "repos/${OWNER}/pathless-linux-stable" -f description="${desc}" --jq .description >/dev/null
+
+	for pair in "current:${c}" "edge:${e}" "bleedingedge:${b}"; do
+		local br="${pair%%:*}" ver="${pair##*:}"
+		[[ -z "${ver}" || "${ver}" == ".." ]] && continue
+		tag="pathless-${br}-v${ver}"
+		tip="$(resolve_sha pathless-linux-stable "${br}")" || continue
+		if ! gh api "repos/${OWNER}/pathless-linux-stable/git/ref/tags/${tag}" >/dev/null 2>&1; then
+			gh api -X POST "repos/${OWNER}/pathless-linux-stable/git/refs" \
+				-f ref="refs/tags/${tag}" -f sha="${tip}" --jq .ref >/dev/null
+			echo "[tag] ${tag} → ${tip}"
+		else
+			echo "[tag] ${tag} already exists"
+		fi
+	done
 }
 
 warn_legacy_mirrors
