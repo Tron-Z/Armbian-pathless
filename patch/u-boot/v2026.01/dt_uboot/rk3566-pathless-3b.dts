@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* Pathless RK3566 — U-Boot DT wrapper；内容对应上游 orangepi-3b 结构，路径自有 */
+
+/dts-v1/;
+
+#include <arm64/rockchip/rk3566-pathless-3b.dtsi>

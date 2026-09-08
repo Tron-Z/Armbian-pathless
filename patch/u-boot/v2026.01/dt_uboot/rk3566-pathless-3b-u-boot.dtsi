@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0+
+/* Pathless RK3566 U-Boot 补充节点（自有文件；功能对齐原 orangepi-3b 板补丁） */
+
+#include "rk356x-u-boot.dtsi"
+
+#ifdef CONFIG_DWC_AHCI
+&binman {
+	simple-bin-spi {
+		filename = "u-boot-rockchip-spi-sata.bin";
+	};
+};
+#endif
+
+&gpio4 {
+	bootph-pre-ram;
+};
+
+&sfc {
+	flash@0 {
+		bootph-pre-ram;
+		bootph-some-ram;
+	};
+};
+
+&vdd_npu {
+	regulator-always-on;
+	regulator-boot-on;
+	regulator-init-microvolt = <900000>;
+};
