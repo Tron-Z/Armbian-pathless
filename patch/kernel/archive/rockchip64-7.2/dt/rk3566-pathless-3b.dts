@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Pathless RK3566 — mainline DT (hardware ref: Orange Pi 3B V1.x)
+ * Includes upstream rk3566-orangepi-3b.dtsi; brand + UWE5622 WiFi/BT nodes are Pathless-owned.
+ * WiFi/BT GPIO layout matches Armbian board-orangepi3b-add-uwe5622-wifi-bt-nodes.patch.
+ */
+
+/dts-v1/;
+
+#include "rk3566-orangepi-3b.dtsi"
+
+/ {
+	model = "Pathless RK3566";
+	compatible = "rockchip,rk3566-pathless-3b", "rockchip,rk3566";
+
+	sprd-mtty {
+		compatible = "sprd,mtty";
+		sprd,name = "ttyBT";
+	};
+
+	uwe-bsp {
+		compatible = "unisoc,uwe_bsp";
+		wl-reg-on = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
+		bt-reg-on = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
+		wl-wake-host-gpio = <&gpio0 RK_PD6 GPIO_ACTIVE_HIGH>;
+		bt-wake-host-gpio = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
+		sdio-ext-int-gpio = <&gpio2 RK_PC1 GPIO_ACTIVE_HIGH>;
+		data-irq;
+		blksz-512;
+		keep-power-on;
+	};
+};
+
+&pmu_io_domains {
+	vccio5-supply = <&vcc_3v3>;
+};
+
+&gmac1 {
+	phy-handle = <&rgmii_phy1>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy1: ethernet-phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <1>;
+		reset-assert-us = <20000>;
+		reset-deassert-us = <50000>;
+		reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+	};
+};
