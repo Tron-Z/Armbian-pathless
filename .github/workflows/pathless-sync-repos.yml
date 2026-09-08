@@ -1,0 +1,38 @@
+# 每 3 个月将 Pathless 自有 Fork 产品分支对齐上游
+# 1月/4月/7月/10月 1 日 03:00 UTC（约北京时间 11:00）
+name: Pathless sync product repos
+
+on:
+  schedule:
+    - cron: "0 3 1 1,4,7,10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pathless-sync-repos
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync forks (vendor/current/edge/bleedingedge)
+        env:
+          GH_TOKEN: ${{ secrets.PATHLESS_SYNC_TOKEN }}
+          GH_HOST: github.com
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "缺少仓库 Secret PATHLESS_SYNC_TOKEN（需 repo 权限，能写 Tron-Z/pathless-* Fork）。" >&2
+            echo "设置：gh secret set PATHLESS_SYNC_TOKEN -R Tron-Z/Armbian-pathless" >&2
+            exit 1
+          fi
+          gh auth status
+          chmod +x tools/pathless/sync-three-repos.sh
+          ./tools/pathless/sync-three-repos.sh all
