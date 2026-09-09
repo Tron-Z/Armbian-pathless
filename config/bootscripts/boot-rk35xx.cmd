@@ -23,6 +23,10 @@ if test -e ${devtype} ${devnum}:${distro_bootpart} ${prefix}armbianEnv.txt; then
 	env import -t ${load_addr} ${filesize}
 fi
 
+# Must be after env import. 0x06000000 is the address that loaded Image (37MB).
+setenv kernel_addr_r "0x06000000"
+echo "kernel_addr_r=${kernel_addr_r}"
+
 if test "${logo}" = "disabled"; then setenv logo "logo.nologo"; fi
 
 if test "${console}" = "display" || test "${console}" = "both"; then setenv consoleargs "console=tty1"; fi

@@ -3,6 +3,12 @@
 
 #include "rk356x-u-boot.dtsi"
 
+/* rk356x-u-boot.dtsi sets 200MHz; SPL and U-Boot proper both stay at 100MHz. */
+&sdhci {
+	max-frequency = <100000000>;
+	mmc-hs200-1_8v;
+};
+
 #ifdef CONFIG_DWC_AHCI
 &binman {
 	simple-bin-spi {

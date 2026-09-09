@@ -35,7 +35,7 @@ USER_CONF="${ROOT}/userpatches/config-pathless.conf"
 write_user_conf() {
 	mkdir -p "${ROOT}/userpatches"
 	if [[ -f "${USER_CONF}" ]]; then
-		grep -v -E '^(REGIONAL_MIRROR|DOWNLOAD_MIRROR|GITHUB_MIRROR|GHCR_MIRROR|GHPROXY_ADDRESS|DOCKER_ARMBIAN_BASE_COORDINATE_PREFIX|DOCKER_SKIP_UPDATE|ARMBIAN_DOCKER_AUTO_PULL)=' \
+		grep -v -E '^(REGIONAL_MIRROR|DOWNLOAD_MIRROR|GITHUB_MIRROR|GHCR_MIRROR|GHPROXY_ADDRESS|DOCKER_ARMBIAN_BASE_COORDINATE_PREFIX|DOCKER_SKIP_UPDATE|ARMBIAN_DOCKER_AUTO_PULL|KERNEL_BTF|DOCKER_EXTRA_ARGS|CUSTOM_UBUNTU_MIRROR_PORTS|SKIP_ARMBIAN_REPO)=' \
 			"${USER_CONF}" > "${USER_CONF}.tmp" || true
 		mv "${USER_CONF}.tmp" "${USER_CONF}"
 	else
@@ -53,6 +53,12 @@ EOF
 
 # --- pathless china speed (managed by tools/pathless/setup-china-speed.sh) ---
 REGIONAL_MIRROR=china
+KERNEL_BTF=no
+GITHUB_MIRROR=ghproxy
+GHPROXY_ADDRESS=gh-proxy.com
+CUSTOM_UBUNTU_MIRROR_PORTS=mirrors.aliyun.com/ubuntu-ports/
+SKIP_ARMBIAN_REPO=yes
+DOCKER_EXTRA_ARGS=(--dns 1.1.1.1 --dns 8.8.8.8 --dns 223.5.5.5)
 DOCKER_ARMBIAN_BASE_COORDINATE_PREFIX=${NJU_PREFIX}
 DOCKER_SKIP_UPDATE=yes
 ARMBIAN_DOCKER_AUTO_PULL=no
@@ -105,7 +111,7 @@ case "${CMD}" in
 		write_user_conf
 		pull_docker_env
 		echo
-		echo "下一步：cd ${ROOT} && ./compile.sh docker pathless"
+		echo "下一步：cd ${ROOT} && ./compile.sh pathless"
 		;;
 	pull-only) pull_docker_env ;;
 	write-conf) write_user_conf ;;

@@ -8,10 +8,12 @@
 git clone --single-branch --branch main https://github.com/Tron-Z/Armbian-pathless.git
 cd Armbian-pathless
 ./tools/pathless/setup-china-speed.sh write-conf   # 可选：国内加速
-./compile.sh docker pathless
+./compile.sh pathless
 ```
 
 **不要**再 clone `pathless-mirrors*`。资源仓（内核 / U-Boot / rkbin）由编译过程拉到 `cache/sources/`。
+
+内核 / U-Boot **git clone 自有仓**（经 `gh-proxy.com`），**不**下载 Armbian GHCR 的 `linux-complete.git.tar`，也 **不** 先克隆主线 `u-boot/u-boot`。rkbin 走 `pathless-rkbin`。不拉 `armbian/firmware`（`INSTALL_ARMBIAN_FIRMWARE=no`）。
 
 ## 自有资源仓（方案 B）
 
