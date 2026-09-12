@@ -275,6 +275,7 @@ function prepare_partitions() {
 	flock -x $FD
 
 	declare -g LOOP
+	ensure_loop_device_nodes
 	#--partscan is using to force the kernel for scaning partition table in preventing of partprobe errors
 	if [[ "$sfdisk_version_num" -ge "24100" ]]; then
 		LOOP=$(losetup --show --partscan --find -b "$SECTOR_SIZE" "${SDCARD}".raw) || exit_with_error "Unable to find free loop device"

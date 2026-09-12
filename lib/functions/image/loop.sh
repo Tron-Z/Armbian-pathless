@@ -10,6 +10,20 @@
 #!/usr/bin/env bash
 # check_loop_device <device_node>
 #
+# Docker only bind-mounts /dev/loopN that existed at `docker run`. Host snap
+# commonly occupies loop0-17, so losetup --find picks loop18+ whose node is
+# missing in the container ("device node /dev/loop18 is lost").
+function ensure_loop_device_nodes() {
+	[[ "${CONTAINER_COMPAT:-}" == "yes" ]] || return 0
+	local i
+	for i in $(seq 0 63); do
+		if [[ ! -e "/dev/loop${i}" ]]; then
+			mknod -m 0660 "/dev/loop${i}" b 7 "${i}" || true
+		fi
+	done
+	return 0
+}
+
 function check_loop_device() {
 	local device="${1}" # $device is local to check_loop_device_internal; keep our own for the error message
 	do_with_retries 5 check_loop_device_internal "${@}" || {

@@ -1,0 +1,210 @@
+#!/bin/bash
+#
+# Pathless sysinfo — same fields and layout as Orange Pi 30-orangepi-sysinfo.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+THIS_SCRIPT="sysinfo"
+
+MOTD_DISABLE=""
+PRIMARY_INTERFACE="eth0"
+PRIMARY_DIRECTION="rx"
+STORAGE=/dev/sda1
+HIDE_IP_PATTERN="^dummy0|^lo"
+CPU_TEMP_LIMIT=60
+CPU_TEMP_OFFSET=0
+HDD_TEMP_LIMIT=60
+AMB_TEMP_LIMIT=40
+
+[[ -f /etc/default/armbian-motd ]] && . /etc/default/armbian-motd
+
+for f in $MOTD_DISABLE; do
+	[[ $f == $THIS_SCRIPT ]] && exit 0
+done
+
+function display() {
+	if [[ "$1" == "Battery" ]]; then local great="<"; else local great=">"; fi
+	if [[ -n "$2" && "$2" > "0" && (( "${2%.*}" -ge "$4" )) ]]; then
+		printf "%-14s" "$1:"
+		if awk "BEGIN{exit ! ($2 $great $3)}"; then echo -ne "\e[0;91m $2"; else echo -ne "\e[0;92m $2"; fi
+		printf "%-1s\x1B[0m" "$5"
+		printf "%-11s\t" "$6"
+		return 1
+	fi
+}
+
+function getboardtemp() {
+	if [ -f /etc/armbianmonitor/datasources/soctemp ]; then
+		read raw_temp </etc/armbianmonitor/datasources/soctemp 2>/dev/null
+		if [ -n "$(echo "$raw_temp" | grep -o "^[1-9][0-9]*\.\?[0-9]*$")" ] && (( $(echo "${raw_temp} < 200" | bc -l 2>/dev/null || echo 0) )); then
+			board_temp=${raw_temp}
+		else
+			board_temp=$(awk '{printf("%d",$1/1000)}' <<<${raw_temp})
+		fi
+	elif [ -f /etc/armbianmonitor/datasources/pmictemp ]; then
+		board_temp=$(awk '{printf("%d",$1/1000)}' </etc/armbianmonitor/datasources/pmictemp)
+	elif [ -f /sys/class/thermal/thermal_zone0/temp ]; then
+		board_temp=$(awk '{printf("%d",$1/1000)}' </sys/class/thermal/thermal_zone0/temp)
+	fi
+	board_temp=$((board_temp + CPU_TEMP_OFFSET))
+}
+
+function batteryinfo() {
+	mainline_dir="/sys/power/axp_pmu"
+	legacy_dir="/sys/class/power_supply"
+	if [[ -e "$mainline_dir" ]]; then
+		read status_battery_connected < $mainline_dir/battery/connected 2>/dev/null
+		if [[ "$status_battery_connected" == "1" ]]; then
+			read status_battery_charging < $mainline_dir/charger/charging
+			read status_ac_connect < $mainline_dir/ac/connected
+			read battery_percent< $mainline_dir/battery/capacity
+			if [[ "$status_ac_connect" == "1" && "$battery_percent" -lt "100" ]]; then
+				status_battery_text=" charging"
+			elif [[ "$status_ac_connect" == "1" && "$battery_percent" -eq "100" ]]; then
+				status_battery_text=" charged"
+			else
+				status_battery_text=" discharging"
+			fi
+		fi
+	elif [[ -e "$legacy_dir/battery" ]]; then
+		if [[ (("$(cat $legacy_dir/battery/voltage_now 2>/dev/null)" -gt "5" )) ]]; then
+			status_battery_text=" "$(awk '{print tolower($0)}' < $legacy_dir/battery/status)
+			read battery_percent <$legacy_dir/battery/capacity
+		fi
+	fi
+}
+
+function ambienttemp() {
+	W1_DIR="/sys/devices/w1_bus_master1/"
+	if [ -f /etc/armbianmonitor/datasources/ambienttemp ]; then
+		read raw_temp </etc/armbianmonitor/datasources/ambienttemp 2>/dev/null
+		amb_temp=$(awk '{printf("%d",$1/1000)}' <<<${raw_temp})
+		echo $amb_temp
+	elif [[ -d $W1_DIR && $ONE_WIRE == yes ]]; then
+		device=$(ls -1 $W1_DIR | grep -E '^[0-9]{1,4}' | head -1)
+		if [[ -n $device ]]; then
+			read raw_temp < ${W1_DIR}${device}/hwmon/$(ls -1 ${W1_DIR}${device}/hwmon)/temp1_input 2>/dev/null
+			amb_temp=$(awk '{printf("%d",$1/1000)}' <<<${raw_temp})
+			echo $amb_temp
+		fi
+	else
+		echo ""
+	fi
+}
+
+function get_ip_addresses() {
+	local ips=()
+	for f in /sys/class/net/*; do
+		local intf=$(basename $f)
+		if [[ $intf =~ $HIDE_IP_PATTERN ]]; then
+			continue
+		else
+			local tmp=$(ip -4 addr show dev $intf | grep -v "$intf:avahi" | awk '/inet/ {print $2}' | cut -d'/' -f1 | head -n 1)
+			[[ -n $tmp ]] && ips+=("$tmp")
+		fi
+	done
+	echo "${ips[@]}"
+}
+
+function storage_info() {
+	RootInfo=$(df -h /)
+	root_usage=$(awk '/\// {print $(NF-1)}' <<<${RootInfo} | sed 's/%//g')
+	root_total=$(awk '/\// {print $(NF-4)}' <<<${RootInfo})
+	StorageInfo=$(df -h $STORAGE 2>/dev/null | grep $STORAGE)
+	if [[ -n "${StorageInfo}" && ${RootInfo} != *$STORAGE* ]]; then
+		storage_usage=$(awk '/\// {print $(NF-1)}' <<<${StorageInfo} | sed 's/%//g')
+		storage_total=$(awk '/\// {print $(NF-4)}' <<<${StorageInfo})
+		if [[ -n "$(command -v smartctl)" ]]; then
+			DISK="${STORAGE::-1}"
+			storage_temp+=$(smartctl -l scttempsts $DISK 2> /dev/null | grep -i 'Current Temperature:' | awk '{print $(NF-1)}')
+		fi
+	fi
+}
+
+amb_temp=$(ambienttemp &)
+ip_address=$(get_ip_addresses &)
+batteryinfo
+storage_info
+getboardtemp
+critical_load=80
+
+UPTIME=$(LC_ALL=C uptime)
+UPT1=${UPTIME#*'up '}
+UPT2=${UPT1%'user'*}
+users=${UPT2//*','}
+users=${users//' '}
+time=${UPT2%','*}
+time=${time//','}
+time=$(echo $time | xargs)
+load=${UPTIME#*'load average: '}
+load=${load//','}
+load=$(echo $load | cut -d" " -f1)
+[[ $load == 0.0* ]] && load=0.10
+cpucount=$(grep -c processor /proc/cpuinfo)
+
+load=$(awk '{printf("%.0f",($1/$2) * 100)}' <<< "$load $cpucount")
+
+mem_info=$(LC_ALL=C free -w 2>/dev/null | grep "^Mem" || LC_ALL=C free | grep "^Mem")
+memory_usage=$(awk '{printf("%.0f",(($2-($4+$6+$7))/$2) * 100)}' <<<${mem_info})
+mem_info=$(echo $mem_info | awk '{print $2}')
+memory_total=$(( mem_info / 1024 ))
+swap_info=$(LC_ALL=C free -m | grep "^Swap")
+swap_usage=$( (awk '/Swap/ { printf("%3.0f", $3/$2*100) }' <<<${swap_info} 2>/dev/null || echo 0) | tr -c -d '[:digit:]')
+swap_total=$(awk '{print $(2)}' <<<${swap_info})
+
+display "System load" "${load%% *}" "${critical_load}" "0" "%" ""
+printf "Up time:       \x1B[92m%s\x1B[0m\t" "$time"
+display "Local users" "${users##* }" "3" "2" ""
+echo ""
+if [[ ${memory_total} -gt 1000 ]]; then
+	memory_total=$(awk '{printf("%.2f",$1/1024)}' <<<${memory_total})"G"
+else
+	memory_total+="M"
+fi
+
+if [[ ${swap_total} -gt 500 ]]; then
+	swap_total=$(awk '{printf("%.2f",$1/1024)}' <<<${swap_total})"G"
+else
+	swap_total+="M"
+fi
+
+display "Memory usage" "$memory_usage" "70" "0" "%" " of ${memory_total}"
+display "Zram usage" "$swap_usage" "75" "0" "%" " of ${swap_total}"
+printf "IP:	       "
+printf "\x1B[92m%s\x1B[0m" "$ip_address"
+echo ""
+display "CPU temp" "$board_temp" $CPU_TEMP_LIMIT "0" "°C" ""
+display "Ambient temp" "$amb_temp" $AMB_TEMP_LIMIT "0" "°C" ""
+display "Usage of /" "$root_usage" "90" "1" "%" " of $root_total"
+echo ""
+a=0
+display "storage/" "$storage_usage" "90" "1" "%" " of $storage_total" ; a=$((a+$?))
+display "storage temp" "$storage_temp" $HDD_TEMP_LIMIT "0" "°C" "" ; a=$((a+$?))
+display "Battery" "$battery_percent" "20" "1" "%" "$status_battery_text" ; a=$((a+$?))
+(( $a > 0 )) && echo ""
+
+PRIMARY_INTERFACE=$(comm -12 <(ls -1 /var/lib/vnstat/ 2> /dev/null) <(echo "$PRIMARY_INTERFACE" | sed 's/+/\n/g') | sed -n -e 'H;${x;s/\n/+/g;s/^+//;p;}')
+
+line=0
+if [[ $(command -v vnstat) && -n $PRIMARY_INTERFACE ]]; then
+	traffic=$(vnstat -i $PRIMARY_INTERFACE --oneline | cut -d";" -f4,5)
+	traffic_rx=$(echo $traffic | cut -d";" -f1,1 | sed -r 's/([0-9]+\.[0-9]{1})[0-9]*/\1/')
+	traffic_tx=$(echo $traffic | cut -d";" -f2,2 | sed -r 's/([0-9]+\.[0-9]{1})[0-9]*/\1/')
+	[[ "$traffic" == *"Not enough"* ]] && { traffic_tx="n/a	"; traffic_rx="n/a	"; }
+	case $PRIMARY_DIRECTION in
+		tx)
+			printf "TX today:      \x1B[92m%s\x1B[0m  \t"  "$traffic_tx"
+			line=$((line+1))
+		;;
+		rx)
+			printf "RX today:      \x1B[92m%s\x1B[0m  \t"  "$traffic_rx"
+			line=$((line+1))
+		;;
+		both)
+			printf "TX today:      \x1B[92m%s\x1B[0m  \t"  "$traffic_tx"
+			printf "RX today:      \x1B[92m%s\x1B[0m  \t"  "$traffic_rx"
+			line=$((line+1))
+		;;
+	esac
+fi
+[[ $line -ne 0 ]] && echo ""
+echo ""

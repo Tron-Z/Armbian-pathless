@@ -1,0 +1,30 @@
+#!/bin/bash
+#
+# Pathless login header — same layout as Orange Pi (toilet + Welcome line).
+
+THIS_SCRIPT="header"
+MOTD_DISABLE=""
+
+[[ -f /etc/default/armbian-motd ]] && . /etc/default/armbian-motd
+
+for f in $MOTD_DISABLE; do
+	[[ $f == $THIS_SCRIPT ]] && exit 0
+done
+
+[[ -f /etc/os-release ]] && . /etc/os-release
+[[ -f /etc/armbian-release ]] && . /etc/armbian-release
+
+KERNELID=$(uname -r)
+VENDOR="${VENDORPRETTYNAME:-${VENDOR:-Pathless}}"
+BOARD_NAME="${BOARD_NAME:-Pathless}"
+TOILET_NAME=$(echo "${BOARD_NAME}" | sed 's/ RK3566//;s/Pathless RK3566/Pathless/')
+
+if command -v toilet >/dev/null 2>&1; then
+	TERM=linux toilet -f standard -F metal ${TOILET_NAME} 2>/dev/null || TERM=linux toilet -f standard ${TOILET_NAME} 2>/dev/null || echo "${TOILET_NAME}"
+else
+	echo "${TOILET_NAME}"
+fi
+
+EDGE=""
+[[ "${BRANCH}" == "edge" ]] && EDGE=$'\e[0;91mbleeding\x1B[0m edge '
+echo -e "Welcome to \e[0;91m${VENDOR} ${VERSION} ${VERSION_CODENAME^}\x1B[0m with ${EDGE}\e[0;91mLinux ${KERNELID}\x1B[0m\n"

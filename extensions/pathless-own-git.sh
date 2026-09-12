@@ -1,5 +1,5 @@
 # Pathless：内核 / U-Boot 只 git clone KERNELSOURCE / BOOTSOURCE（Tron-Z 自有仓），
-# 经 GITHUB_SOURCE（gh-proxy.com），不拉 Armbian ORAS 内核包、不拉主线 u-boot 裸仓。
+# 经 GITHUB_SOURCE（ghfast.top），不拉 Armbian ORAS 内核包、不拉主线 u-boot 裸仓。
 #
 # SPDX-License-Identifier: GPL-2.0
 
@@ -74,6 +74,28 @@ function pathless_clone_product_git() {
 	touch "${done_marker}"
 	git_ensure_safe_directory "${dest_dir}"
 	pathless_drop_stale_git_worktree "${dest_dir}" "${stale_worktree}"
+}
+
+# Host snap occupies loop0-17; Docker only passes through nodes that exist at
+# container start. Pre-create loop0-63 and pass them in so image packing works.
+function host_pre_docker_launch__pathless_ensure_loop_nodes() {
+	display_alert "Ensuring host loop device nodes" "loop0-63 (snap occupies many loops)" "info"
+	if [[ -n "${DOCKER_ARMBIAN_INITIAL_IMAGE_TAG:-}" ]]; then
+		run_host_command_logged docker run --rm --privileged --cap-add=MKNOD \
+			-v /dev:/dev "${DOCKER_ARMBIAN_INITIAL_IMAGE_TAG}" \
+			/bin/bash -c 'for n in $(seq 0 63); do [[ -e /dev/loop$n ]] || mknod -m 0660 /dev/loop$n b 7 $n; done'
+	else
+		local n
+		for n in $(seq 0 63); do
+			[[ -e "/dev/loop${n}" ]] || mknod -m 0660 "/dev/loop${n}" b 7 "${n}" || true
+		done
+	fi
+	local loop_node
+	for loop_node in /dev/loop[0-9]*; do
+		[[ -b "${loop_node}" ]] || continue
+		DOCKER_EXTRA_ARGS+=("--device=${loop_node}")
+	done
+	return 0
 }
 
 function kernel_prepare_bare_repo_decide_shallow_or_full() {

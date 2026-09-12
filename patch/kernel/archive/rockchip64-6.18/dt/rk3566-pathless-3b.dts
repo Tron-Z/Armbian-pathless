@@ -16,6 +16,8 @@
 	sprd-mtty {
 		compatible = "sprd,mtty";
 		sprd,name = "ttyBT";
+		/* sprdbt_tty oopses in get_loopcheck_status unless marlin/uwe-bsp is up. */
+		status = "disabled";
 	};
 
 	uwe-bsp {
@@ -28,11 +30,33 @@
 		data-irq;
 		blksz-512;
 		keep-power-on;
+		status = "disabled";
 	};
 };
 
 &pmu_io_domains {
 	vccio5-supply = <&vcc_3v3>;
+};
+
+/* Match vendor: RK809 DCDC must have an explicit 900 mV boot voltage. */
+&vdd_logic {
+	regulator-init-microvolt = <900000>;
+};
+
+&vdd_gpu {
+	regulator-init-microvolt = <900000>;
+};
+
+/*
+ * Vendor tsadc needs OTP nvmem trim (trim_base / cpu-tsadc-trim-*).
+ * Mainline rk356x-base.dtsi has none; enabling TSHUT CRU-resets the SoC.
+ */
+&tsadc {
+	status = "disabled";
+};
+
+&sdmmc1 {
+	status = "disabled";
 };
 
 &gmac1 {
@@ -42,6 +66,9 @@
 
 &sdhci {
 	max-frequency = <80000000>;
+	/delete-property/ mmc-hs200-1_8v;
+	/delete-property/ mmc-hs400-1_8v;
+	/delete-property/ mmc-hs400-enhanced-strobe;
 };
 
 &mdio1 {

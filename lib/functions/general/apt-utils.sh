@@ -81,8 +81,30 @@ function apt_find_upstream_package_version_and_download_url() {
 	if [[ "${found_package_filename}" == "${sought_package_name}_"* ]]; then
 		display_alert "Found upstream base-files package filename" "${found_package_filename}" "info"
 	else
-		display_alert "Could not find package filename for '${sought_package_name}' in distro repo" "looking for ${sought_package_name}, found_package_filename is ${found_package_filename}" "warn"
-		return 1
+		# Armbian's GitHub JSON lags new suites (e.g. Ubuntu resolute). Fall back to the
+		# configured distro mirror's Packages.gz so builds are not blocked on that index.
+		display_alert "JSON has no '${sought_package_name}' for ${package_download_release}/${ARCH}" "trying mirror Packages.gz" "wrn"
+		declare packages_gz="http://${mirror_with_slash}dists/${package_download_release}/main/binary-${ARCH}/Packages.gz"
+		found_package_filename="$(
+			set +o pipefail
+			curl --silent --show-error --max-time 30 "${packages_gz}" |
+				gzip -dc 2>/dev/null |
+				awk -v pkg="${sought_package_name}" '
+					$0 == "Package: " pkg { hit = 1 }
+					hit && $1 == "Filename:" {
+						n = split($2, parts, "/")
+						print parts[n]
+						exit
+					}
+					hit && NF == 0 { exit }
+				'
+		)"
+		if [[ "${found_package_filename}" == "${sought_package_name}_"* ]]; then
+			display_alert "Found upstream package from mirror Packages" "${found_package_filename}" "info"
+		else
+			display_alert "Could not find package filename for '${sought_package_name}' in distro repo" "looking for ${sought_package_name}, found_package_filename is ${found_package_filename}" "warn"
+			return 1
+		fi
 	fi
 
 	found_package_down_url="${base_down_url}/${found_package_filename}"

@@ -1,8 +1,13 @@
 #!/bin/bash
 
-# Pathless RK3566：仅在存在 sprd-mtty 设备树节点时启用
-if [[ ! -d /proc/device-tree/sprd-mtty ]]; then
-	systemctl disable pathless-rk3566-sprd-bluetooth.service
+# Pathless RK3566：仅在 sprd-mtty 存在且 status=okay 时启用。
+# status=disabled 时节点目录仍在；current 关掉 uwe-bsp/sdmmc1 后
+# sprdbt_tty 会在 get_loopcheck_status 空指针 oops。
+mtty_status=""
+if [[ -f /proc/device-tree/sprd-mtty/status ]]; then
+	mtty_status="$(tr -d '\0' </proc/device-tree/sprd-mtty/status)"
+fi
+if [[ ! -d /proc/device-tree/sprd-mtty ]] || [[ "${mtty_status}" == "disabled" ]]; then
 	exit 0
 fi
 

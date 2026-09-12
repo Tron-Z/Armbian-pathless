@@ -55,7 +55,7 @@ EOF
 REGIONAL_MIRROR=china
 KERNEL_BTF=no
 GITHUB_MIRROR=ghproxy
-GHPROXY_ADDRESS=gh-proxy.com
+GHPROXY_ADDRESS=ghfast.top
 CUSTOM_UBUNTU_MIRROR_PORTS=mirrors.aliyun.com/ubuntu-ports/
 SKIP_ARMBIAN_REPO=yes
 DOCKER_EXTRA_ARGS=(--dns 1.1.1.1 --dns 8.8.8.8 --dns 223.5.5.5)

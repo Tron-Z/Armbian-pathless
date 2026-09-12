@@ -1,0 +1,106 @@
+#!/bin/bash
+#
+# Optional first-boot network from /boot/pathless_first_run.txt
+# (rename pathless_first_run.txt.template). Same idea as Orange Pi's
+# orangepi_first_run.txt; uses NetworkManager when present, else netplan.
+
+mask2cidr() {
+	nbits=0
+	IFS=.
+	for dec in $1; do
+		case $dec in
+			255) let nbits+=8 ;;
+			254) let nbits+=7 ;;
+			252) let nbits+=6 ;;
+			248) let nbits+=5 ;;
+			240) let nbits+=4 ;;
+			224) let nbits+=3 ;;
+			192) let nbits+=2 ;;
+			128) let nbits+=1 ;;
+			0) ;;
+			*) echo "Error: $dec is not recognised"; exit 1 ;;
+		esac
+	done
+	echo "$nbits"
+}
+
+fp_config='/boot/pathless_first_run.txt'
+[[ -f $fp_config ]] || exit 0
+
+sed -i $'s/\r$//' "$fp_config"
+bash -n "$fp_config" || exit 1
+# shellcheck disable=SC1090
+source "$fp_config"
+
+FR_net_static_dns=${FR_net_static_dns// /,}
+if [[ "${FR_net_static_mask}" == *.* ]]; then
+	FR_net_static_mask=$(mask2cidr "$FR_net_static_mask")
+fi
+
+if [[ $FR_general_delete_this_file_after_completion == 1 ]]; then
+	dd if=/dev/urandom of="$fp_config" bs=16K count=1 status=none 2>/dev/null || true
+	sync
+	rm -f "$fp_config"
+else
+	mv "$fp_config" "${fp_config}.old"
+fi
+
+[[ $FR_net_change_defaults == 1 ]] || exit 0
+
+eth_index="$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(eth|en)' | grep -v 'lo' | head -1)"
+wlan_index="$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(wlan|wl)' | head -1)"
+[[ -n $eth_index || -n $wlan_index ]] || exit 0
+
+if command -v nmcli >/dev/null 2>&1; then
+	FIXED_IP_SETTINGS=""
+	if [[ $FR_net_use_static == 1 ]]; then
+		FIXED_IP_SETTINGS="ipv4.method manual ipv4.address ${FR_net_static_ip}/${FR_net_static_mask} ipv4.dns ${FR_net_static_dns} ipv4.gateway ${FR_net_static_gateway}"
+	fi
+	LC_ALL=C nmcli -t -f UUID,DEVICE connection show | awk '{print $1}' | cut -f1 -d":" | xargs -r nmcli connection delete
+	if [[ $FR_net_wifi_enabled == 1 && -n $wlan_index ]]; then
+		[[ -n $FR_net_wifi_countrycode ]] && iw reg set "$FR_net_wifi_countrycode"
+		nmcli con add con-name "Pathless wireless" type wifi ifname "${wlan_index}" ssid "$FR_net_wifi_ssid" -- wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$FR_net_wifi_key" ${FIXED_IP_SETTINGS}
+		nmcli con up "Pathless wireless"
+	elif [[ $FR_net_ethernet_enabled == 1 && -n $eth_index ]]; then
+		nmcli con add con-name "Pathless ethernet" type ethernet ifname "${eth_index}" -- ${FIXED_IP_SETTINGS}
+		nmcli con up "Pathless ethernet"
+	fi
+	exit 0
+fi
+
+# netplan fallback (systemd-networkd images)
+if [[ $FR_net_wifi_enabled == 1 && -n $wlan_index ]]; then
+	cat > /etc/netplan/30-pathless-first-run.yaml << EOF
+network:
+  wifis:
+    ${wlan_index}:
+      dhcp4: $([ "$FR_net_use_static" = 1 ] && echo no || echo yes)
+      dhcp6: yes
+      access-points:
+        "${FR_net_wifi_ssid}":
+          password: "${FR_net_wifi_key}"
+EOF
+elif [[ $FR_net_ethernet_enabled == 1 && -n $eth_index ]]; then
+	rm -f /etc/netplan/10-dhcp-all-interfaces.yaml
+	cat > /etc/netplan/30-pathless-first-run.yaml << EOF
+network:
+  ethernets:
+    ${eth_index}:
+      dhcp4: $([ "$FR_net_use_static" = 1 ] && echo no || echo yes)
+      dhcp6: yes
+EOF
+fi
+if [[ $FR_net_use_static == 1 && -f /etc/netplan/30-pathless-first-run.yaml ]]; then
+	cat >> /etc/netplan/30-pathless-first-run.yaml << EOF
+      addresses:
+        - ${FR_net_static_ip}/${FR_net_static_mask}
+      routes:
+        - to: default
+          via: ${FR_net_static_gateway}
+      nameservers:
+        addresses: [${FR_net_static_dns}]
+EOF
+fi
+chmod 600 /etc/netplan/30-pathless-first-run.yaml 2>/dev/null || true
+command -v netplan >/dev/null 2>&1 && netplan apply >/dev/null 2>&1 || true
+exit 0
