@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Pathless <pathless@local>
+Date: Mon, 14 Sep 2026 16:50:00 +0800
+Subject: net: phy: motorcomm: YT8531 Rockchip BSP analog init
+
+Vendor RK356x analog init (CLKOUT 0xd0, RXC duty, pad 0xdbcf, 100M BGS).
+Dump ext regs after init.
+
+Signed-off-by: Pathless <pathless@local>
+---
+--- a/drivers/net/phy/motorcomm.c
++++ b/drivers/net/phy/motorcomm.c
+@@ -1799,6 +1799,67 @@
+ 	return 0;
+ }
+ 
++static int yt8531_rockchip_bsp_init(struct phy_device *phydev)
++{
++	u16 duty = 0x9696;
++	int ret, val, i, synce, pad, chip, rgmii;
++
++	ret = ytphy_write_ext_with_lock(phydev, YTPHY_SYNCE_CFG_REG, 0xd0);
++	if (ret < 0)
++		return ret;
++
++	ret = ytphy_write_ext_with_lock(phydev, 0xa040, 0xffff);
++	if (ret < 0)
++		return ret;
++	ret = ytphy_write_ext_with_lock(phydev, 0xa041, 0xff);
++	if (ret < 0)
++		return ret;
++	ret = ytphy_write_ext_with_lock(phydev, 0xa039, 0xbf00);
++	if (ret < 0)
++		return ret;
++
++	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
++	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID)
++		duty = 0x4040;
++
++	for (i = 0; i < 6; i++) {
++		ret = ytphy_write_ext_with_lock(phydev, 0xa03a + i, duty);
++		if (ret < 0)
++			return ret;
++	}
++
++	ret = ytphy_write_ext_with_lock(phydev, YTPHY_PAD_DRIVE_STRENGTH_REG,
++					0xdbcf);
++	if (ret < 0)
++		return ret;
++
++	val = ytphy_read_ext_with_lock(phydev, 0x57);
++	if (val < 0)
++		return val;
++	val = (val & ~(0xf << 8)) | (7 << 8);
++	ret = ytphy_write_ext_with_lock(phydev, 0x57, val);
++	if (ret < 0)
++		return ret;
++
++	synce = ytphy_read_ext_with_lock(phydev, YTPHY_SYNCE_CFG_REG);
++	pad = ytphy_read_ext_with_lock(phydev, YTPHY_PAD_DRIVE_STRENGTH_REG);
++	chip = ytphy_read_ext_with_lock(phydev, YT8521_CHIP_CONFIG_REG);
++	rgmii = ytphy_read_ext_with_lock(phydev, YT8521_RGMII_CONFIG1_REG);
++	if (synce < 0)
++		return synce;
++	if (pad < 0)
++		return pad;
++	if (chip < 0)
++		return chip;
++	if (rgmii < 0)
++		return rgmii;
++
++	phydev_info(phydev,
++		    "YT8531 rockchip-bsp-init: if=%d synce=0x%x pad=0x%x bgs=0x%x chip=0x%x rgmii=0x%x\n",
++		    phydev->interface, synce, pad, val, chip, rgmii);
++	return 0;
++}
++
+ static int yt8531_config_init(struct phy_device *phydev)
+ {
+ 	struct device_node *node = phydev->mdio.dev.of_node;
+@@ -1830,6 +1891,12 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	if (of_property_read_bool(node, "motorcomm,rockchip-bsp-init")) {
++		ret = yt8531_rockchip_bsp_init(phydev);
++		if (ret < 0)
++			return ret;
++	}
++
+ 	return 0;
+ }
+ 

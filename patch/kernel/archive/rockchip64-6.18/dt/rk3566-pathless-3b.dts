@@ -60,7 +60,11 @@
 };
 
 &gmac1 {
-	phy-handle = <&rgmii_phy1>;
+	phy-handle = <&rgmii_phy0>;
+	phy-mode = "rgmii";
+	tx_delay = <0x30>;
+	rx_delay = <0x20>;
+	assigned-clock-rates = <0>, <125000000>;
 	status = "okay";
 };
 
@@ -71,12 +75,35 @@
 	/delete-property/ mmc-hs400-enhanced-strobe;
 };
 
+/*
+ * Hardware is YT8531 at MDIO 0, reset GPIO3_PC2, VCCIO5 3.3V.
+ * 100M needs PHY TXC invert; MAC tx_delay=0x30 rx_delay=0x20
+ * (best of 0x10/0x20/0x30 on board). Vendor analog init: CLKOUT 0xd0,
+ * RXC duty, 100M BGS.
+ */
 &mdio1 {
-	rgmii_phy1: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <1>;
-		reset-assert-us = <20000>;
-		reset-deassert-us = <50000>;
+	rgmii_phy0: ethernet-phy@0 {
+		compatible = "ethernet-phy-id4f51.e91b",
+			     "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+		reset-assert-us = <50000>;
+		reset-deassert-us = <200000>;
 		reset-gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gmac1_phy_rst>;
+		motorcomm,clk-out-frequency-hz = <125000000>;
+		motorcomm,keep-pll-enabled;
+		motorcomm,auto-sleep-disabled;
+		motorcomm,rockchip-bsp-init;
+		motorcomm,tx-clk-adj-enabled;
+		motorcomm,tx-clk-100-inverted;
+	};
+};
+
+&pinctrl {
+	gmac1-phy {
+		gmac1_phy_rst: gmac1-phy-rst {
+			rockchip,pins = <3 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
 	};
 };
